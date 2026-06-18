@@ -1,5 +1,5 @@
 import { db } from '../data/database.js';
-import type { ApprovalNode, ApprovalRules, ReminderRecord, Reservation } from '../../shared/types.js';
+import type { ApprovalNode, ApprovalNodeStatus, ApprovalRules, ReminderRecord, Reservation } from '../../shared/types.js';
 import { addHours, genId } from '../utils/dateUtils.js';
 import { processAllTimeouts, createReminder, createEscalationNode } from '../algorithms/timeoutDetection.js';
 
@@ -29,8 +29,11 @@ export type ApprovalNodeWithReservation = ApprovalNode & {
   reservation?: Reservation & { benchName?: string };
 };
 
-export const getPendingApprovals = (approverId: string): ApprovalNodeWithReservation[] => {
-  return db.approvals
+export const getPendingApprovals = (
+  approverId: string,
+  filters?: { benchId?: string; userName?: string; projectName?: string }
+): ApprovalNodeWithReservation[] => {
+  let result = db.approvals
     .filter((a) => a.approverId === approverId && a.status === 'pending')
     .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
     .map((a) => {
@@ -43,10 +46,31 @@ export const getPendingApprovals = (approverId: string): ApprovalNodeWithReserva
           : undefined,
       };
     });
+
+  if (filters?.benchId) {
+    result = result.filter((a) => a.reservation?.benchId === filters.benchId);
+  }
+  if (filters?.userName) {
+    const kw = filters.userName.toLowerCase();
+    result = result.filter((a) => a.reservation?.userName.toLowerCase().includes(kw));
+  }
+  if (filters?.projectName) {
+    const kw = filters.projectName.toLowerCase();
+    result = result.filter((a) => a.reservation?.projectName.toLowerCase().includes(kw));
+  }
+
+  return result;
 };
 
-export const getAllApprovals = (): ApprovalNodeWithReservation[] => {
-  return [...db.approvals]
+export const getAllApprovals = (
+  filters?: {
+    benchId?: string;
+    userName?: string;
+    projectName?: string;
+    status?: ApprovalNodeStatus;
+  }
+): ApprovalNodeWithReservation[] => {
+  let result = [...db.approvals]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((a) => {
       const reservation = db.reservations.find((r) => r.id === a.reservationId);
@@ -58,6 +82,23 @@ export const getAllApprovals = (): ApprovalNodeWithReservation[] => {
           : undefined,
       };
     });
+
+  if (filters?.benchId) {
+    result = result.filter((a) => a.reservation?.benchId === filters.benchId);
+  }
+  if (filters?.userName) {
+    const kw = filters.userName.toLowerCase();
+    result = result.filter((a) => a.reservation?.userName.toLowerCase().includes(kw));
+  }
+  if (filters?.projectName) {
+    const kw = filters.projectName.toLowerCase();
+    result = result.filter((a) => a.reservation?.projectName.toLowerCase().includes(kw));
+  }
+  if (filters?.status) {
+    result = result.filter((a) => a.status === filters.status);
+  }
+
+  return result;
 };
 
 export const getApprovalById = (id: string): ApprovalNode | undefined => {

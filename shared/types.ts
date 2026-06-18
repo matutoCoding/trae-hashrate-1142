@@ -46,6 +46,7 @@ export interface OccupancyBlock {
   status: OccupancyStatus;
   mergedFrom?: string[];
   splitFrom?: string;
+  reservations?: Reservation[];
 }
 
 export type ReservationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed';

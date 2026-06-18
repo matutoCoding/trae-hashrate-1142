@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Calendar, Clock, MapPin, Users, ChevronLeft, ChevronRight,
-  Sparkles, AlertCircle,
+  Sparkles, AlertCircle, X, FlaskConical, User, FileText,
+  CheckCircle, XCircle,
 } from 'lucide-react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -10,7 +11,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
-import type { LabBench, OccupancyBlock } from '../../shared/types';
+import type { LabBench, OccupancyBlock, Reservation } from '../../shared/types';
 
 const HS = 8, HE = 22, HN = HE - HS;
 const WD = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -20,8 +21,17 @@ const getMon = (d: Date) => {
   x.setDate(x.getDate() + (dy === 0 ? -6 : 1 - dy));
   x.setHours(0, 0, 0, 0); return x;
 };
+const getSun = (d: Date) => {
+  const x = getMon(d);
+  x.setDate(x.getDate() + 6);
+  x.setHours(23, 59, 59, 999);
+  return x;
+};
 const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 const fmtDT = (d: Date) => d.toISOString().slice(0, 16);
+const fmtTime = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
+const fmtSlot = (a: string, b: string) =>
+  `${new Date(a).getMonth() + 1}/${new Date(a).getDate()} ${fmtTime(a)} - ${fmtTime(b)}`;
 const pT = (iso: string) => { const d = new Date(iso); return d.getHours() + d.getMinutes() / 60; };
 const sD = (iso: string, d: Date) => {
   const x = new Date(iso);
@@ -32,7 +42,181 @@ const SG: Record<string, string> = {
   confirmed: 'from-blue-400/90 to-blue-600/90 text-white',
   cancelled: 'from-slate-300/90 to-slate-400/90 text-slate-700',
 };
+const SGT: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-700 border-amber-200',
+  approved: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
+  rejected: 'bg-rose-100 text-rose-700 border-rose-200',
+  cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
+  completed: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+};
+const SGL: Record<string, string> = {
+  pending: '待审批',
+  approved: '已通过',
+  confirmed: '已确认',
+  rejected: '已驳回',
+  cancelled: '已取消',
+  completed: '已完成',
+};
 interface SS { di: number; sh: number; eh: number; }
+
+function OccupancyPopover({
+  block,
+  benchName,
+  onClose,
+  onGoReservation,
+}: {
+  block: OccupancyBlock;
+  benchName: string;
+  onClose: () => void;
+  onGoReservation: (id: string) => void;
+}) {
+  const primary = block.reservations?.[0] as Reservation | undefined;
+  const merged = !!block.mergedFrom && block.mergedFrom.length > 0;
+  const status = block.status;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-bold truncate">{primary?.projectName ?? '预约占用'}</h3>
+                {merged && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-bold backdrop-blur-sm">
+                    <Sparkles className="w-3 h-3" />
+                    合并占用
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-white/70 mt-1">占用编号 {block.id.slice(0, 12)}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors flex-shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="p-4 bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">预约时段</span>
+            </div>
+            <p className="text-base font-bold text-slate-800">{fmtSlot(block.startTime, block.endTime)}</p>
+          </div>
+
+          {primary && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-white rounded-xl border border-slate-100">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <FlaskConical className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">实验台</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-800">{benchName}</p>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-slate-100">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <User className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">申请人</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-800">{primary.userName}</p>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-slate-100">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <User className="w-3.5 h-3.5 text-purple-600" />
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">导师</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-800">{primary.advisorName}</p>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-slate-100">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">占用状态</span>
+                </div>
+                <span className={cn(
+                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border',
+                  SGT[status]
+                )}>
+                  {SGL[status]}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {primary?.description && (
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="flex items-center gap-1.5 mb-2">
+                <FileText className="w-4 h-4 text-slate-500" />
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">实验描述</span>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed">{primary.description}</p>
+            </div>
+          )}
+
+          {merged && block.reservations && block.reservations.length > 1 && (
+            <div className="border-t border-slate-100 pt-4">
+              <div className="flex items-center gap-1.5 mb-3">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <p className="text-sm font-bold text-slate-700">
+                  包含 {block.reservations.length} 个连续预约
+                </p>
+              </div>
+              <div className="space-y-2">
+                {block.reservations.map((r, idx) => (
+                  <div
+                    key={r.id}
+                    className="p-3 bg-amber-50/50 rounded-xl border border-amber-100 hover:bg-amber-100/60 transition-colors cursor-pointer group"
+                    onClick={() => onGoReservation(r.id)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold flex items-center justify-center flex-shrink-0">
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm font-semibold text-slate-800 truncate">
+                            {r.projectName}
+                          </p>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 ml-8">
+                          {r.userName} · {fmtTime(r.startTime)} - {fmtTime(r.endTime)}
+                        </p>
+                      </div>
+                      <span className={cn(
+                        'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0',
+                        SGT[r.status]
+                      )}>
+                        {SGL[r.status]}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3">
+          {primary && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onGoReservation(primary.id)}
+            >
+              查看预约详情
+            </Button>
+          )}
+          <Button variant="primary" size="sm" onClick={onClose}>关闭</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function BenchDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,18 +226,22 @@ export default function BenchDetail() {
   const [wb, setWb] = useState<Date>(() => getMon(new Date()));
   const [sel, setSel] = useState<SS | null>(null);
   const [ing, setIng] = useState<{ di: number; sh: number } | null>(null);
+  const [popBlock, setPopBlock] = useState<OccupancyBlock | null>(null);
 
   const wDays = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => { const d = new Date(wb); d.setDate(d.getDate() + i); return d; }), [wb]);
-  const occ = (id ? scheduleCache[id] : []) || [];
+  const weekStart = useMemo(() => wb.toISOString(), [wb]);
+  const weekEnd = useMemo(() => getSun(wb).toISOString(), [wb]);
+  const cacheKey = id ? `${id}_${weekStart}` : '';
+  const occ = useMemo(() => (cacheKey ? scheduleCache[cacheKey] : []) || [], [scheduleCache, cacheKey]);
 
   useEffect(() => {
     if (!id) return;
     api.getBench(id).then((r) => r.success && r.data && setBench(r.data));
     const ex = benches.find((b) => b.id === id);
     if (!bench && ex) setBench(ex);
-    loadSchedule(id);
-  }, [id, wb]);
+    loadSchedule(id, weekStart, weekEnd);
+  }, [id, wb, weekStart, weekEnd]);
 
   const md = (di: number, h: number) => { setIng({ di, sh: h }); setSel({ di, sh: h, eh: h + 1 }); };
   const me = (di: number, h: number) => {
@@ -79,6 +267,15 @@ export default function BenchDetail() {
     const e = new Date(d); e.setHours(sel.eh, 0, 0, 0);
     const q = new URLSearchParams({ benchId: id, start: fmtDT(s), end: fmtDT(e) });
     nav(`/reservations/new?${q.toString()}`);
+  };
+
+  const onBlockClick = (e: React.MouseEvent, blk: OccupancyBlock) => {
+    e.stopPropagation();
+    setPopBlock(blk);
+  };
+  const onGoReservation = (rid: string) => {
+    setPopBlock(null);
+    nav(`/reservations/${rid}`);
   };
 
   if (!bench) return (
@@ -178,19 +375,22 @@ export default function BenchDetail() {
                     const ht = (pT(blk.endTime) - pT(blk.startTime)) * 48;
                     const mg = !!blk.mergedFrom && blk.mergedFrom.length > 0;
                     return (
-                      <div key={blk.id} className={cn(
-                        'absolute left-1 right-1 rounded-lg px-2 py-1 text-xs overflow-hidden shadow-sm bg-gradient-to-br',
-                        SG[blk.status] || SG.confirmed,
-                        mg && 'ring-2 ring-amber-400 ring-offset-1',
-                      )} style={{ top, height: ht }}>
+                      <div
+                        key={blk.id}
+                        className={cn(
+                          'absolute left-1 right-1 rounded-lg px-2 py-1 text-xs overflow-hidden shadow-sm bg-gradient-to-br cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
+                          SG[blk.status] || SG.confirmed,
+                          mg && 'ring-2 ring-amber-400 ring-offset-1',
+                        )}
+                        style={{ top, height: ht }}
+                        onClick={(e) => onBlockClick(e, blk)}
+                      >
                         {mg && <span className="absolute top-0.5 right-1 flex items-center gap-0.5 text-[10px] font-bold"><Sparkles className="w-3 h-3" />合并</span>}
                         <div className="font-semibold truncate">
-                          {new Date(blk.startTime).toTimeString().slice(0, 5)} ~ {new Date(blk.endTime).toTimeString().slice(0, 5)}
+                          {fmtTime(blk.startTime)} ~ {fmtTime(blk.endTime)}
                         </div>
                         <div className="text-[11px] opacity-90 truncate mt-0.5">
-                          {blk.status === 'pending' && '待审批'}
-                          {blk.status === 'confirmed' && '已确认'}
-                          {blk.status === 'cancelled' && '已取消'}
+                          {blk.reservations?.[0]?.projectName || SGL[blk.status] || '占用中'}
                         </div>
                       </div>
                     );
@@ -212,6 +412,15 @@ export default function BenchDetail() {
           </Card.Footer>
         )}
       </Card>
+
+      {popBlock && (
+        <OccupancyPopover
+          block={popBlock}
+          benchName={bench.name}
+          onClose={() => setPopBlock(null)}
+          onGoReservation={onGoReservation}
+        />
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type {
   DashboardStats,
   ApprovalRules,
   OccupancyBlock,
+  ApprovalNodeStatus,
 } from '../../shared/types';
 import { api } from '../lib/api';
 
@@ -26,12 +27,17 @@ interface AppState {
   loadCurrentUser: () => Promise<void>;
   switchUser: (id: string) => Promise<void>;
   loadBenches: (params?: { category?: string; status?: string; keyword?: string }) => Promise<void>;
-  loadSchedule: (benchId: string) => Promise<void>;
+  loadSchedule: (benchId: string, start?: string, end?: string) => Promise<void>;
   loadDashboard: () => Promise<void>;
   loadMyReservations: (status?: string) => Promise<void>;
   loadAllReservations: () => Promise<void>;
-  loadPendingApprovals: () => Promise<void>;
-  loadAllApprovals: () => Promise<void>;
+  loadPendingApprovals: (filters?: { benchId?: string; userName?: string; projectName?: string }) => Promise<void>;
+  loadAllApprovals: (filters?: {
+    benchId?: string;
+    userName?: string;
+    projectName?: string;
+    status?: ApprovalNodeStatus;
+  }) => Promise<void>;
   loadReminders: () => Promise<void>;
   loadRules: () => Promise<void>;
   updateRules: (rules: Partial<ApprovalRules>) => Promise<void>;
@@ -68,11 +74,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ benches: res.data });
     }
   },
-  loadSchedule: async (benchId: string) => {
-    const res = await api.getBenchSchedule(benchId);
+  loadSchedule: async (benchId: string, start?: string, end?: string) => {
+    const cacheKey = start ? `${benchId}_${start}` : benchId;
+    const res = await api.getBenchSchedule(benchId, start, end);
     if (res.success && res.data) {
       set((s) => ({
-        scheduleCache: { ...s.scheduleCache, [benchId]: res.data as OccupancyBlock[] },
+        scheduleCache: { ...s.scheduleCache, [cacheKey]: res.data as OccupancyBlock[] },
       }));
     }
   },
@@ -94,14 +101,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ reservations: res.data });
     }
   },
-  loadPendingApprovals: async () => {
-    const res = await api.getPendingApprovals();
+  loadPendingApprovals: async (filters) => {
+    const res = await api.getPendingApprovals(filters);
     if (res.success && res.data) {
       set({ pendingApprovals: res.data });
     }
   },
-  loadAllApprovals: async () => {
-    const res = await api.getAllApprovals();
+  loadAllApprovals: async (filters) => {
+    const res = await api.getAllApprovals(filters);
     if (res.success && res.data) {
       set({ allApprovals: res.data });
     }

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import type { ApiResponse } from '../../shared/types.js';
+import type { ApiResponse, ApprovalNodeStatus } from '../../shared/types.js';
 import {
   getPendingApprovals,
   approveReservation,
@@ -15,15 +15,17 @@ import { db } from '../data/database.js';
 
 const router = Router();
 
-router.get('/approvals/pending', (_req: Request, res: Response) => {
+router.get('/approvals/pending', (req: Request, res: Response) => {
   const approverId = db.currentUserId;
-  const approvals = getPendingApprovals(approverId);
+  const { benchId, userName, projectName } = req.query as Record<string, string>;
+  const approvals = getPendingApprovals(approverId, { benchId, userName, projectName });
   const resp: ApiResponse<typeof approvals> = { success: true, data: approvals };
   res.json(resp);
 });
 
-router.get('/approvals/all', (_req: Request, res: Response) => {
-  const approvals = getAllApprovals();
+router.get('/approvals/all', (req: Request, res: Response) => {
+  const { benchId, userName, projectName, status } = req.query as Record<string, string>;
+  const approvals = getAllApprovals({ benchId, userName, projectName, status: status as ApprovalNodeStatus | undefined });
   const resp: ApiResponse<typeof approvals> = { success: true, data: approvals };
   res.json(resp);
 });

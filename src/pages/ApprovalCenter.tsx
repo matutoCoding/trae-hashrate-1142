@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle, XCircle, ArrowUpCircle, Timer, AlertCircle, ShieldAlert, Loader2, FlaskConical, User, FileText, CalendarDays, Clock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle, XCircle, ArrowUpCircle, Timer, AlertCircle, ShieldAlert, Loader2, FlaskConical, User, FileText, CalendarDays, Clock, Search, Filter, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
-import type { ApprovalNode, Reservation } from '../../shared/types';
+import type { ApprovalNode, Reservation, ApprovalNodeStatus } from '../../shared/types';
 
 type TabKey = 'pending' | 'processed' | 'all';
 const tabs: { key: TabKey; label: string }[] = [
@@ -333,6 +333,94 @@ function ProcessedCard({ node }: { node: ApprovalNodeEx }) {
   );
 }
 
+function FilterBar({
+  filters,
+  setFilters,
+  benches,
+}: {
+  filters: { benchId: string; userName: string; projectName: string; status: string };
+  setFilters: (f: { benchId: string; userName: string; projectName: string; status: string }) => void;
+  benches: { id: string; name: string }[];
+}) {
+  const hasFilter = filters.benchId || filters.userName || filters.projectName || filters.status;
+  const statusOptions: { key: ApprovalNodeStatus | 'all'; label: string }[] = [
+    { key: 'all', label: '全部状态' },
+    { key: 'pending', label: '待审批' },
+    { key: 'approved', label: '已通过' },
+    { key: 'rejected', label: '已驳回' },
+    { key: 'timeout', label: '超时裁决' },
+    { key: 'escalated', label: '已升级' },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm text-slate-600">
+        <Filter className="w-4 h-4 text-slate-400" />
+        <span className="font-semibold">筛选</span>
+        {hasFilter && (
+          <button
+            onClick={() => setFilters({ benchId: '', userName: '', projectName: '', status: '' })}
+            className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          >
+            <X className="w-3.5 h-3.5" />
+            清除筛选
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="relative">
+          <select
+            value={filters.benchId}
+            onChange={(e) => setFilters({ ...filters, benchId: e.target.value })}
+            className="w-full pl-3 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm appearance-none cursor-pointer"
+          >
+            <option value="">全部实验台</option>
+            {benches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <FlaskConical className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        </div>
+
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="搜索申请人..."
+            value={filters.userName}
+            onChange={(e) => setFilters({ ...filters, userName: e.target.value })}
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+          />
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="搜索项目名..."
+            value={filters.projectName}
+            onChange={(e) => setFilters({ ...filters, projectName: e.target.value })}
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+          />
+        </div>
+
+        <div className="relative">
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            className="w-full pl-3 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm appearance-none cursor-pointer"
+          >
+            {statusOptions.map((s) => (
+              <option key={s.key} value={s.key === 'all' ? '' : s.key}>{s.label}</option>
+            ))}
+          </select>
+          <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ApprovalCenter() {
   const [tab, setTab] = useState<TabKey>('pending');
   const [modal, setModal] = useState<{
@@ -344,20 +432,42 @@ export default function ApprovalCenter() {
   const [escalatingId, setEscalatingId] = useState<string | null>(null);
   const [timeoutLoading, setTimeoutLoading] = useState(false);
   const [toast, setToast] = useState<{ m: string; t: 'success' | 'error' } | null>(null);
-  const { pendingApprovals, allApprovals, loadPendingApprovals, loadAllApprovals } = useAppStore();
+  const [filters, setFilters] = useState({
+    benchId: '',
+    userName: '',
+    projectName: '',
+    status: '',
+  });
+  const { pendingApprovals, allApprovals, loadPendingApprovals, loadAllApprovals, benches, loadBenches } = useAppStore();
 
   useEffect(() => {
-    loadPendingApprovals();
-    loadAllApprovals();
-  }, [loadPendingApprovals, loadAllApprovals]);
+    loadBenches();
+  }, [loadBenches]);
+
+  useEffect(() => {
+    const f = {
+      benchId: filters.benchId || undefined,
+      userName: filters.userName || undefined,
+      projectName: filters.projectName || undefined,
+      status: (filters.status || undefined) as ApprovalNodeStatus | undefined,
+    };
+    loadPendingApprovals({ benchId: f.benchId, userName: f.userName, projectName: f.projectName });
+    loadAllApprovals(f);
+  }, [filters, tab, loadPendingApprovals, loadAllApprovals]);
 
   const showToast = (m: string, t: 'success' | 'error' = 'success') => {
     setToast({ m, t });
     setTimeout(() => setToast(null), 2500);
   };
   const refresh = () => {
-    loadPendingApprovals();
-    loadAllApprovals();
+    const f = {
+      benchId: filters.benchId || undefined,
+      userName: filters.userName || undefined,
+      projectName: filters.projectName || undefined,
+      status: (filters.status || undefined) as ApprovalNodeStatus | undefined,
+    };
+    loadPendingApprovals({ benchId: f.benchId, userName: f.userName, projectName: f.projectName });
+    loadAllApprovals(f);
   };
   const handleConfirm = async (comment: string) => {
     if (!modal.node) return;
@@ -406,12 +516,16 @@ export default function ApprovalCenter() {
       setTimeoutLoading(false);
     }
   };
-  const list =
-    tab === 'pending'
-      ? pendingApprovals
-      : tab === 'processed'
-        ? allApprovals.filter((n) => n.status !== 'pending')
-        : allApprovals;
+  const list = useMemo(() => {
+    if (tab === 'pending') return pendingApprovals;
+    if (tab === 'processed') return allApprovals.filter((n) => n.status !== 'pending');
+    return allApprovals;
+  }, [tab, pendingApprovals, allApprovals]);
+
+  const benchOptions = useMemo(
+    () => benches.map((b) => ({ id: b.id, name: b.name })),
+    [benches]
+  );
 
   return (
     <div className="space-y-6">
@@ -436,7 +550,10 @@ export default function ApprovalCenter() {
         </Button>
       </div>
       <Card>
-        <div className="flex items-center gap-2 border-b border-slate-100 px-2 overflow-x-auto">
+        <div className="p-5 border-b border-slate-100">
+          <FilterBar filters={filters} setFilters={setFilters} benches={benchOptions} />
+        </div>
+        <div className="flex items-center gap-2 border-b border-slate-100 px-5 overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.key}

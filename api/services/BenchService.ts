@@ -1,5 +1,5 @@
 import { db } from '../data/database.js';
-import type { LabBench, OccupancyBlock, DashboardStats, ActivityItem } from '../../shared/types.js';
+import type { LabBench, OccupancyBlock, DashboardStats, ActivityItem, Reservation } from '../../shared/types.js';
 import { getStartOfDay, getEndOfDay, genId } from '../utils/dateUtils.js';
 
 export const getAllBenches = (filters?: {
@@ -40,13 +40,20 @@ export const getBenchSchedule = (
   const start = startDate ? new Date(startDate) : getStartOfDay(new Date());
   const end = endDate ? new Date(endDate) : getEndOfDay(new Date(Date.now() + 7 * 86400000));
 
-  return db.occupancies.filter((o) => {
-    if (o.benchId !== benchId) return false;
-    if (o.status === 'cancelled') return false;
-    const os = new Date(o.startTime).getTime();
-    const oe = new Date(o.endTime).getTime();
-    return os < end.getTime() && oe > start.getTime();
-  });
+  return db.occupancies
+    .filter((o) => {
+      if (o.benchId !== benchId) return false;
+      if (o.status === 'cancelled') return false;
+      const os = new Date(o.startTime).getTime();
+      const oe = new Date(o.endTime).getTime();
+      return os < end.getTime() && oe > start.getTime();
+    })
+    .map((o) => ({
+      ...o,
+      reservations: o.reservationIds
+        .map((rid) => db.reservations.find((r) => r.id === rid))
+        .filter(Boolean) as Reservation[],
+    }));
 };
 
 export const createBench = (

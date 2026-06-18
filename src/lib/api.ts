@@ -79,8 +79,19 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ reason }) }
     ),
 
-  getPendingApprovals: () => request<ApprovalNode[]>('/approvals/pending'),
-  getAllApprovals: () => request<ApprovalNode[]>('/approvals/all'),
+  getPendingApprovals: (filters?: { benchId?: string; userName?: string; projectName?: string }) => {
+    const qs = filters ? '?' + new URLSearchParams(filters as Record<string, string>).toString() : '';
+    return request<ApprovalNode[]>(`/approvals/pending${qs}`);
+  },
+  getAllApprovals: (filters?: {
+    benchId?: string;
+    userName?: string;
+    projectName?: string;
+    status?: string;
+  }) => {
+    const qs = filters ? '?' + new URLSearchParams(filters as Record<string, string>).toString() : '';
+    return request<ApprovalNode[]>(`/approvals/all${qs}`);
+  },
   approve: (id: string, comment?: string) =>
     request<{ node: ApprovalNode; reservation: Reservation }>(`/approvals/${id}/approve`, {
       method: 'POST',
