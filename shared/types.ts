@@ -114,6 +114,28 @@ export interface SplitRecord {
   operatorName: string;
 }
 
+export type ChangeLogType =
+  | 'submit'
+  | 'merge'
+  | 'split'
+  | 'approval'
+  | 'reminder'
+  | 'escalation'
+  | 'auto_decision'
+  | 'cancel';
+
+export interface ChangeLogEntry {
+  id: string;
+  type: ChangeLogType;
+  time: string;
+  operatorId?: string;
+  operatorName?: string;
+  isSystem: boolean;
+  title: string;
+  description: string;
+  details?: Record<string, unknown>;
+}
+
 export interface ApprovalRules {
   advisorTimeoutHours: number;
   firstReminderHours: number;

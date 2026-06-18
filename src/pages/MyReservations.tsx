@@ -16,6 +16,12 @@ import {
   LayoutList,
   CalendarDays,
   Sparkles,
+  History,
+  Scissors,
+  Bell,
+  AlertOctagon,
+  Zap,
+  Loader2,
 } from 'lucide-react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -24,7 +30,7 @@ import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import Empty from '../components/Empty';
-import type { Reservation, ReservationStatus, ApprovalNode } from '../../shared/types';
+import type { Reservation, ReservationStatus, ApprovalNode, ChangeLogEntry } from '../../shared/types';
 
 type TabKey = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled';
 type ViewMode = 'list' | 'calendar';
@@ -61,6 +67,28 @@ const SGL: Record<ReservationStatus, string> = {
   cancelled: '已取消',
   completed: '已完成',
 };
+
+const BENCH_COLORS = [
+  'from-blue-400 to-blue-600',
+  'from-emerald-400 to-emerald-600',
+  'from-purple-400 to-purple-600',
+  'from-orange-400 to-orange-600',
+  'from-pink-400 to-pink-600',
+  'from-cyan-400 to-cyan-600',
+  'from-violet-400 to-violet-600',
+  'from-rose-400 to-rose-600',
+];
+
+const BENCH_COLORS_SOFT = [
+  'from-blue-400/90 to-blue-600/90 text-white',
+  'from-emerald-400/90 to-emerald-600/90 text-white',
+  'from-purple-400/90 to-purple-600/90 text-white',
+  'from-orange-400/90 to-orange-600/90 text-white',
+  'from-pink-400/90 to-pink-600/90 text-white',
+  'from-cyan-400/90 to-cyan-600/90 text-white',
+  'from-violet-400/90 to-violet-600/90 text-white',
+  'from-rose-400/90 to-rose-600/90 text-white',
+];
 
 const getMon = (d: Date) => {
   const x = new Date(d); const dy = x.getDay();
@@ -140,14 +168,139 @@ function ApprovalTimeline({ trail }: { trail: ApprovalNode[] }) {
   );
 }
 
+function changeLogStyle(type: string) {
+  switch (type) {
+    case 'submit':
+      return { icon: CalendarPlus, color: 'text-blue-600', bg: 'bg-blue-100', ring: 'ring-blue-200', line: 'bg-blue-300', label: '提交' };
+    case 'approval':
+      return { icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100', ring: 'ring-emerald-200', line: 'bg-emerald-300', label: '审批' };
+    case 'merge':
+      return { icon: Sparkles, color: 'text-amber-600', bg: 'bg-amber-100', ring: 'ring-amber-200', line: 'bg-amber-300', label: '合并' };
+    case 'split':
+      return { icon: Scissors, color: 'text-purple-600', bg: 'bg-purple-100', ring: 'ring-purple-200', line: 'bg-purple-300', label: '拆分' };
+    case 'reminder':
+      return { icon: Bell, color: 'text-orange-600', bg: 'bg-orange-100', ring: 'ring-orange-200', line: 'bg-orange-300', label: '催办' };
+    case 'escalation':
+      return { icon: AlertOctagon, color: 'text-rose-600', bg: 'bg-rose-100', ring: 'ring-rose-200', line: 'bg-rose-300', label: '升级' };
+    case 'auto_decision':
+      return { icon: Zap, color: 'text-violet-600', bg: 'bg-violet-100', ring: 'ring-violet-200', line: 'bg-violet-300', label: '自动裁决' };
+    case 'cancel':
+      return { icon: XCircle, color: 'text-slate-600', bg: 'bg-slate-100', ring: 'ring-slate-200', line: 'bg-slate-300', label: '退订' };
+    default:
+      return { icon: History, color: 'text-slate-500', bg: 'bg-slate-100', ring: 'ring-slate-200', line: 'bg-slate-300', label: '记录' };
+  }
+}
+
+function ChangeLogTimeline({ log }: { log: ChangeLogEntry[] }) {
+  if (log.length === 0) return <Empty description="暂无变更记录" />;
+  return (
+    <div className="relative">
+      {log.map((entry, i) => {
+        const style = changeLogStyle(entry.type);
+        const Icon = style.icon;
+        const isLast = i === log.length - 1;
+        return (
+          <div key={entry.id} className="flex gap-4">
+            <div className="flex flex-col items-center">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center ring-4 z-10 bg-white',
+                style.ring, style.bg
+              )}>
+                <Icon className={cn('w-5 h-5', style.color)} />
+              </div>
+              {!isLast && <div className={cn('w-0.5 flex-1 my-1', style.line)} />}
+            </div>
+            <div className="flex-1 pb-6">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-semibold text-slate-800 text-sm">{entry.title}</h4>
+                <span className={cn(
+                  'px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                  entry.isSystem ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'
+                )}>
+                  {entry.isSystem ? '系统' : '人工'}
+                </span>
+                <span className="text-[11px] text-slate-400 ml-auto">
+                  {new Date(entry.time).toLocaleString('zh-CN')}
+                </span>
+              </div>
+              {entry.operatorName && (
+                <p className="text-xs text-slate-500 mt-1">操作人：{entry.operatorName}</p>
+              )}
+              <p className="text-sm text-slate-600 mt-2 leading-relaxed">{entry.description}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChangeLogModal({
+  open,
+  onClose,
+  reservationId,
+  reservationTitle,
+}: {
+  open: boolean;
+  onClose: () => void;
+  reservationId: string;
+  reservationTitle: string;
+}) {
+  const [log, setLog] = useState<ChangeLogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && reservationId) {
+      setLoading(true);
+      api.getChangeLog(reservationId)
+        .then((res) => { if (res.success) setLog(res.data || []); })
+        .finally(() => setLoading(false));
+    }
+  }, [open, reservationId]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <History className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold truncate">变更记录</h3>
+              <p className="text-xs text-white/70 truncate">{reservationTitle}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors flex-shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            </div>
+          ) : (
+            <ChangeLogTimeline log={log} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ListView({
   reservations,
   navigate,
   setCancelTarget,
+  onViewChangeLog,
 }: {
   reservations: Reservation[];
   navigate: (p: string) => void;
   setCancelTarget: (r: Reservation | null) => void;
+  onViewChangeLog: (r: Reservation) => void;
 }) {
   if (reservations.length === 0) {
     return (
@@ -219,6 +372,14 @@ function ListView({
                     <Button
                       variant="outline"
                       size="sm"
+                      icon={<History className="w-4 h-4" />}
+                      onClick={() => onViewChangeLog(r)}
+                    >
+                      变更记录
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       icon={<ChevronRight className="w-4 h-4" />}
                       onClick={() => navigate(`/reservations/${r.id}`)}
                     >
@@ -248,9 +409,27 @@ function ListView({
 function CalendarView({
   reservations,
   navigate,
+  colorMode,
+  benchColors,
+  filterBenchId,
+  filterStatus,
+  onFilterBenchChange,
+  onFilterStatusChange,
+  onColorModeChange,
+  allBenches,
+  onViewChangeLog,
 }: {
   reservations: Reservation[];
   navigate: (p: string) => void;
+  colorMode: 'status' | 'bench';
+  benchColors: Record<string, string>;
+  filterBenchId: string;
+  filterStatus: string;
+  onFilterBenchChange: (id: string) => void;
+  onFilterStatusChange: (s: string) => void;
+  onColorModeChange: (m: 'status' | 'bench') => void;
+  allBenches: { id: string; name: string }[];
+  onViewChangeLog: (r: Reservation) => void;
 }) {
   const [wb, setWb] = useState<Date>(() => getMon(new Date()));
   const [selected, setSelected] = useState<Reservation | null>(null);
@@ -263,22 +442,119 @@ function CalendarView({
   const prev = () => { const d = new Date(wb); d.setDate(d.getDate() - 7); setWb(d); };
   const next = () => { const d = new Date(wb); d.setDate(d.getDate() + 7); setWb(d); };
 
-  const bD = (d: Date) => reservations.filter((r) => sD(r.startTime, d));
+  const filteredReservations = useMemo(() => {
+    return reservations.filter((r) => {
+      if (filterBenchId && r.benchId !== filterBenchId) return false;
+      if (filterStatus && filterStatus !== 'all' && r.status !== filterStatus) return false;
+      return true;
+    });
+  }, [reservations, filterBenchId, filterStatus]);
+
+  const bD = (d: Date) => filteredReservations.filter((r) => sD(r.startTime, d));
+
+  const getBlockColor = (r: Reservation) => {
+    if (colorMode === 'bench') {
+      return benchColors[r.benchId] || SGB[r.status] || SGB.pending;
+    }
+    return SGB[r.status] || SGB.pending;
+  };
+
+  const hasFilter = filterBenchId || (filterStatus && filterStatus !== 'all');
 
   return (
     <Card className="p-0 overflow-hidden">
-      <Card.Header>
-        <div className="flex items-center gap-3">
-          <Calendar className="w-5 h-5 text-blue-600" />
-          <div>
-            <h3 className="font-semibold text-slate-900">周日历</h3>
-            <p className="text-xs text-slate-500">{fmt(wDays[0])} ~ {fmt(wDays[6])}</p>
+      <Card.Header className="pb-0">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+          <div className="flex items-center gap-3">
+            <Calendar className="w-5 h-5 text-blue-600" />
+            <div>
+              <h3 className="font-semibold text-slate-900">周日历</h3>
+              <p className="text-xs text-slate-500">{fmt(wDays[0])} ~ {fmt(wDays[6])}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-1 justify-end flex-wrap">
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <button
+                onClick={() => onFilterStatusChange('all')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'all' || !filterStatus
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                全部
+              </button>
+              <button
+                onClick={() => onFilterStatusChange('pending')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'pending'
+                    ? 'bg-amber-100 text-amber-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                待审批
+              </button>
+              <button
+                onClick={() => onFilterStatusChange('approved')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'approved'
+                    ? 'bg-emerald-100 text-emerald-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                已通过
+              </button>
+            </div>
+            <select
+              value={filterBenchId}
+              onChange={(e) => onFilterBenchChange(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:border-blue-500 cursor-pointer"
+            >
+              <option value="">全部实验台</option>
+              {allBenches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <button
+                onClick={() => onColorModeChange('status')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  colorMode === 'status'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+                title="按状态着色"
+              >
+                状态
+              </button>
+              <button
+                onClick={() => onColorModeChange('bench')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  colorMode === 'bench'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+                title="按实验台着色"
+              >
+                实验台
+              </button>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
           <Button variant="ghost" size="sm" icon={<ChevronLeft className="w-4 h-4" />} onClick={prev}>上一周</Button>
           <Button variant="ghost" size="sm" onClick={() => setWb(getMon(new Date()))}>本周</Button>
           <Button variant="ghost" size="sm" icon={<ChevronRight className="w-4 h-4" />} onClick={next}>下一周</Button>
+          <div className="flex-1" />
+          <span className="text-[11px] text-slate-400">
+            显示 {filteredReservations.length} 条预约
+            {hasFilter && ' · 已筛选'}
+          </span>
         </div>
       </Card.Header>
 
@@ -322,7 +598,7 @@ function CalendarView({
                       key={r.id}
                       className={cn(
                         'absolute left-1 right-1 rounded-lg px-2 py-1 text-xs overflow-hidden shadow-sm bg-gradient-to-br cursor-pointer transition-all hover:shadow-md hover:scale-[1.01] z-10',
-                        SGB[r.status] || SGB.pending
+                        getBlockColor(r)
                       )}
                       style={{ top, height: ht }}
                       onClick={() => setSelected(r)}
@@ -395,11 +671,21 @@ function CalendarView({
                 </div>
               )}
             </div>
-            <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              <Button variant="outline" size="sm" onClick={() => setSelected(null)}>关闭</Button>
-              <Button variant="primary" size="sm" onClick={() => { setSelected(null); navigate(`/reservations/${selected.id}`); }}>
-                查看详情
+            <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<History className="w-4 h-4" />}
+                onClick={() => { if (selected) { setSelected(null); onViewChangeLog(selected); } }}
+              >
+                变更记录
               </Button>
+              <div className="flex gap-3">
+                <Button variant="outline" size="sm" onClick={() => setSelected(null)}>关闭</Button>
+                <Button variant="primary" size="sm" onClick={() => { setSelected(null); navigate(`/reservations/${selected.id}`); }}>
+                  查看详情
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -410,22 +696,47 @@ function CalendarView({
 
 export default function MyReservations() {
   const navigate = useNavigate();
-  const { reservations, loadMyReservations } = useAppStore();
+  const { reservations, loadMyReservations, benches, loadBenches } = useAppStore();
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [keyword, setKeyword] = useState('');
   const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [canceling, setCanceling] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [colorMode, setColorMode] = useState<'status' | 'bench'>('status');
+  const [filterBenchId, setFilterBenchId] = useState('');
+  const [calendarFilterStatus, setCalendarFilterStatus] = useState('all');
+  const [changeLogModal, setChangeLogModal] = useState<{ open: boolean; reservation: Reservation | null }>({
+    open: false,
+    reservation: null,
+  });
+
+  const handleViewChangeLog = (r: Reservation) => {
+    setChangeLogModal({ open: true, reservation: r });
+  };
 
   useEffect(() => {
     loadMyReservations(TABS.find((t) => t.key === activeTab)?.status);
-  }, [activeTab, loadMyReservations]);
+    loadBenches();
+  }, [activeTab, loadMyReservations, loadBenches]);
+
+  const benchColors = useMemo(() => {
+    const map: Record<string, string> = {};
+    benches.forEach((b, i) => {
+      map[b.id] = BENCH_COLORS_SOFT[i % BENCH_COLORS_SOFT.length];
+    });
+    return map;
+  }, [benches]);
+
+  const benchList = useMemo(() => {
+    return benches.map((b) => ({ id: b.id, name: b.name }));
+  }, [benches]);
 
   const filtered = useMemo(() => {
-    return reservations.filter((r) =>
-      keyword ? r.projectName.toLowerCase().includes(keyword.toLowerCase()) : true
-    );
+    return reservations.filter((r) => {
+      if (keyword && !r.projectName.toLowerCase().includes(keyword.toLowerCase())) return false;
+      return true;
+    });
   }, [reservations, keyword]);
 
   const handleCancel = async () => {
@@ -513,9 +824,22 @@ export default function MyReservations() {
           reservations={filtered}
           navigate={navigate}
           setCancelTarget={setCancelTarget}
+          onViewChangeLog={handleViewChangeLog}
         />
       ) : (
-        <CalendarView reservations={filtered} navigate={navigate} />
+        <CalendarView
+          reservations={filtered}
+          navigate={navigate}
+          colorMode={colorMode}
+          benchColors={benchColors}
+          filterBenchId={filterBenchId}
+          filterStatus={calendarFilterStatus}
+          onFilterBenchChange={setFilterBenchId}
+          onFilterStatusChange={setCalendarFilterStatus}
+          onColorModeChange={setColorMode}
+          allBenches={benchList}
+          onViewChangeLog={handleViewChangeLog}
+        />
       )}
 
       {cancelTarget && (
@@ -571,6 +895,13 @@ export default function MyReservations() {
           </div>
         </div>
       )}
+
+      <ChangeLogModal
+        open={changeLogModal.open}
+        onClose={() => setChangeLogModal({ open: false, reservation: null })}
+        reservationId={changeLogModal.reservation?.id || ''}
+        reservationTitle={changeLogModal.reservation?.projectName || ''}
+      />
     </div>
   );
 }

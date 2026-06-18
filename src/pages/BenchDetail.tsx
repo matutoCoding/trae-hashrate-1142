@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Calendar, Clock, MapPin, Users, ChevronLeft, ChevronRight,
   Sparkles, AlertCircle, X, FlaskConical, User, FileText,
-  CheckCircle, XCircle,
+  CheckCircle, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -29,6 +29,10 @@ const getSun = (d: Date) => {
 };
 const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 const fmtDT = (d: Date) => d.toISOString().slice(0, 16);
+const fmtDT2 = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 const fmtTime = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
 const fmtSlot = (a: string, b: string) =>
   `${new Date(a).getMonth() + 1}/${new Date(a).getDate()} ${fmtTime(a)} - ${fmtTime(b)}`;
@@ -60,6 +64,186 @@ const SGL: Record<string, string> = {
 };
 interface SS { di: number; sh: number; eh: number; }
 
+function ApprovalMiniTimeline({ reservation }: { reservation: Reservation }) {
+  const trail = reservation.approvalTrail || [];
+  if (trail.length === 0) return null;
+
+  const statusColor = (s: string) => {
+    switch (s) {
+      case 'approved': return { dot: 'bg-emerald-500', ring: 'ring-emerald-200', text: 'text-emerald-700' };
+      case 'rejected': return { dot: 'bg-rose-500', ring: 'ring-rose-200', text: 'text-rose-700' };
+      case 'timeout': return { dot: 'bg-orange-500', ring: 'ring-orange-200', text: 'text-orange-700' };
+      case 'escalated': return { dot: 'bg-amber-500', ring: 'ring-amber-200', text: 'text-amber-700' };
+      case 'pending': return { dot: 'bg-blue-500', ring: 'ring-blue-200', text: 'text-blue-700' };
+      default: return { dot: 'bg-slate-400', ring: 'ring-slate-200', text: 'text-slate-500' };
+    }
+  };
+
+  const statusLabel = (s: string) => {
+    switch (s) {
+      case 'approved': return '已通过';
+      case 'rejected': return '已驳回';
+      case 'timeout': return '超时裁决';
+      case 'escalated': return '已升级';
+      case 'pending': return '待审批';
+      default: return s;
+    }
+  };
+
+  const roleLabel = (r: string) => {
+    switch (r) {
+      case 'advisor': return '指导教师';
+      case 'department_head': return '系主任';
+      case 'auto': return '系统自动';
+      default: return r;
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 mb-2">
+        <CheckCircle className="w-4 h-4 text-indigo-600" />
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">审批进度</span>
+      </div>
+      <div className="relative pl-2">
+        {trail.map((node, i) => {
+          const c = statusColor(node.status);
+          const isLast = i === trail.length - 1;
+          return (
+            <div key={node.id} className="relative pb-3 last:pb-0">
+              {!isLast && (
+                <div className="absolute left-[7px] top-5 bottom-0 w-px bg-slate-200" />
+              )}
+              <div className="flex items-start gap-3">
+                <div className={cn(
+                  'w-4 h-4 rounded-full ring-2 ring-offset-2 flex-shrink-0 mt-0.5',
+                  c.dot, c.ring
+                )} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn('text-xs font-semibold', c.text)}>
+                      {statusLabel(node.status)}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                      {roleLabel(node.role)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {node.approverName}
+                    </span>
+                  </div>
+                  {node.comment && (
+                    <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+                      {node.comment}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {fmtDT2(node.status === 'pending' ? node.createdAt : (node.handledAt || node.createdAt))}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReservationCard({
+  reservation,
+  index,
+  onClick,
+}: {
+  reservation: Reservation;
+  index?: number;
+  onClick: () => void;
+}) {
+  const c = (s: string) => {
+    switch (s) {
+      case 'approved': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'rejected': return 'bg-rose-100 text-rose-700 border-rose-200';
+      case 'pending': return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'cancelled': return 'bg-slate-100 text-slate-500 border-slate-200';
+      default: return 'bg-slate-100 text-slate-600 border-slate-200';
+    }
+  };
+  const l = (s: string) => {
+    switch (s) {
+      case 'approved': return '已通过';
+      case 'rejected': return '已驳回';
+      case 'pending': return '待审批';
+      case 'cancelled': return '已取消';
+      default: return s;
+    }
+  };
+
+  return (
+    <div
+      className="p-3 bg-gradient-to-br from-slate-50 to-white rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group"
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            {typeof index === 'number' && (
+              <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                {index}
+              </span>
+            )}
+            <p className="text-sm font-bold text-slate-800 truncate">{reservation.projectName}</p>
+          </div>
+          <div className="ml-0 space-y-1">
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <User className="w-3 h-3" />
+              <span>申请人：{reservation.userName}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <User className="w-3 h-3 text-purple-500" />
+              <span>导师：{reservation.advisorName}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <Clock className="w-3 h-3" />
+              <span>{fmtTime(reservation.startTime)} - {fmtTime(reservation.endTime)}</span>
+            </div>
+          </div>
+        </div>
+        <span className={cn(
+          'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0',
+          c(reservation.status)
+        )}>
+          {l(reservation.status)}
+        </span>
+      </div>
+      {reservation.approvalTrail && reservation.approvalTrail.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center gap-1">
+            {reservation.approvalTrail.slice(0, 4).map((n, i) => (
+              <div
+                key={n.id}
+                className={cn(
+                  'w-5 h-5 rounded-full border-2 -ml-1 first:ml-0 bg-white flex items-center justify-center',
+                  n.status === 'approved' ? 'border-emerald-500 text-emerald-500' :
+                  n.status === 'rejected' ? 'border-rose-500 text-rose-500' :
+                  n.status === 'pending' ? 'border-blue-500 text-blue-500' :
+                  'border-slate-400 text-slate-400'
+                )}
+              >
+                {n.status === 'approved' && <CheckCircle className="w-3 h-3" />}
+                {n.status === 'rejected' && <XCircle className="w-3 h-3" />}
+                {n.status === 'pending' && <Clock className="w-3 h-3" />}
+                {n.status === 'escalated' && <AlertTriangle className="w-3 h-3" />}
+              </div>
+            ))}
+            <span className="text-[10px] text-slate-400 ml-2">
+              共 {reservation.approvalTrail.length} 级审批
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OccupancyPopover({
   block,
   benchName,
@@ -73,16 +257,19 @@ function OccupancyPopover({
 }) {
   const primary = block.reservations?.[0] as Reservation | undefined;
   const merged = !!block.mergedFrom && block.mergedFrom.length > 0;
+  const multi = (block.reservations?.length || 0) > 1;
   const status = block.status;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex-shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-lg font-bold truncate">{primary?.projectName ?? '预约占用'}</h3>
+                <h3 className="text-lg font-bold truncate">
+                  {multi ? '合并预约占用' : primary?.projectName || '预约占用'}
+                </h3>
                 {merged && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-bold backdrop-blur-sm">
                     <Sparkles className="w-3 h-3" />
@@ -101,66 +288,65 @@ function OccupancyPopover({
           </div>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <div className="p-4 bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-xl border border-slate-100">
             <div className="flex items-center gap-1.5 mb-2">
               <Clock className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">预约时段</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">占用时段</span>
             </div>
             <p className="text-base font-bold text-slate-800">{fmtSlot(block.startTime, block.endTime)}</p>
+            <div className="flex items-center gap-3 mt-2">
+              <div className="flex items-center gap-1.5 text-xs">
+                <FlaskConical className="w-3.5 h-3.5 text-blue-600" />
+                <span className="text-slate-600">{benchName}</span>
+              </div>
+              <span className={cn(
+                'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border',
+                SGT[status]
+              )}>
+                {SGL[status]}
+              </span>
+            </div>
           </div>
 
-          {primary && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-white rounded-xl border border-slate-100">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <FlaskConical className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">实验台</span>
+          {!multi && primary && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-white rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <User className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">申请人</span>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">{primary.userName}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-800">{benchName}</p>
+                <div className="p-3 bg-white rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <User className="w-3.5 h-3.5 text-purple-600" />
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">导师</span>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">{primary.advisorName}</p>
+                </div>
               </div>
-              <div className="p-3 bg-white rounded-xl border border-slate-100">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">申请人</span>
+
+              {primary.description && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <FileText className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">实验描述</span>
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed">{primary.description}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-800">{primary.userName}</p>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-slate-100">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <User className="w-3.5 h-3.5 text-purple-600" />
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">导师</span>
-                </div>
-                <p className="text-sm font-semibold text-slate-800">{primary.advisorName}</p>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-slate-100">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">占用状态</span>
-                </div>
-                <span className={cn(
-                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border',
-                  SGT[status]
-                )}>
-                  {SGL[status]}
-                </span>
+              )}
+
+              <div className="p-4 bg-gradient-to-br from-indigo-50/50 to-blue-50/30 rounded-xl border border-indigo-100">
+                <ApprovalMiniTimeline reservation={primary} />
               </div>
             </div>
           )}
 
-          {primary?.description && (
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-1.5 mb-2">
-                <FileText className="w-4 h-4 text-slate-500" />
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">实验描述</span>
-              </div>
-              <p className="text-sm text-slate-700 leading-relaxed">{primary.description}</p>
-            </div>
-          )}
-
-          {merged && block.reservations && block.reservations.length > 1 && (
-            <div className="border-t border-slate-100 pt-4">
-              <div className="flex items-center gap-1.5 mb-3">
+          {multi && block.reservations && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-amber-500" />
                 <p className="text-sm font-bold text-slate-700">
                   包含 {block.reservations.length} 个连续预约
@@ -168,40 +354,19 @@ function OccupancyPopover({
               </div>
               <div className="space-y-2">
                 {block.reservations.map((r, idx) => (
-                  <div
+                  <ReservationCard
                     key={r.id}
-                    className="p-3 bg-amber-50/50 rounded-xl border border-amber-100 hover:bg-amber-100/60 transition-colors cursor-pointer group"
+                    reservation={r}
+                    index={idx + 1}
                     onClick={() => onGoReservation(r.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-                            {idx + 1}
-                          </span>
-                          <p className="text-sm font-semibold text-slate-800 truncate">
-                            {r.projectName}
-                          </p>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1 ml-8">
-                          {r.userName} · {fmtTime(r.startTime)} - {fmtTime(r.endTime)}
-                        </p>
-                      </div>
-                      <span className={cn(
-                        'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0',
-                        SGT[r.status]
-                      )}>
-                        {SGL[r.status]}
-                      </span>
-                    </div>
-                  </div>
+                  />
                 ))}
               </div>
             </div>
           )}
         </div>
 
-        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3">
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3 flex-shrink-0">
           {primary && (
             <Button
               variant="outline"

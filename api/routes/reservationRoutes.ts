@@ -7,6 +7,7 @@ import {
   cancelReservation,
   getAllReservations,
 } from '../services/ReservationService.js';
+import { getChangeLog } from '../services/ChangeLogService.js';
 import { db } from '../data/database.js';
 
 const router = Router();
@@ -59,6 +60,12 @@ router.get('/reservations/:id', (req: Request, res: Response) => {
     return res.status(404).json(resp);
   }
   const resp: ApiResponse<typeof reservation> = { success: true, data: reservation };
+  res.json(resp);
+});
+
+router.get('/reservations/:id/changelog', (req: Request, res: Response) => {
+  const log = getChangeLog(req.params.id);
+  const resp: ApiResponse<typeof log> = { success: true, data: log };
   res.json(resp);
 });
 

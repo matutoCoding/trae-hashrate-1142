@@ -13,6 +13,11 @@ import {
   Scissors,
   MessageSquare,
   MapPin,
+  History,
+  Sparkles,
+  CalendarPlus,
+  AlertOctagon,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -26,6 +31,7 @@ import type {
   ApprovalNode,
   ReminderRecord,
   SplitRecord,
+  ChangeLogEntry,
 } from '../../shared/types';
 
 function fmtDT(iso: string) {
@@ -207,6 +213,147 @@ function SplitRecordCard({ s }: { s: SplitRecord }) {
   );
 }
 
+function changeLogStyle(type: string) {
+  switch (type) {
+    case 'submit':
+      return {
+        icon: CalendarPlus,
+        color: 'text-blue-600',
+        bg: 'bg-blue-100',
+        ring: 'ring-blue-200',
+        line: 'bg-blue-300',
+        label: '提交',
+      };
+    case 'approval':
+      return {
+        icon: CheckCircle2,
+        color: 'text-emerald-600',
+        bg: 'bg-emerald-100',
+        ring: 'ring-emerald-200',
+        line: 'bg-emerald-300',
+        label: '审批',
+      };
+    case 'merge':
+      return {
+        icon: Sparkles,
+        color: 'text-amber-600',
+        bg: 'bg-amber-100',
+        ring: 'ring-amber-200',
+        line: 'bg-amber-300',
+        label: '合并',
+      };
+    case 'split':
+      return {
+        icon: Scissors,
+        color: 'text-purple-600',
+        bg: 'bg-purple-100',
+        ring: 'ring-purple-200',
+        line: 'bg-purple-300',
+        label: '拆分',
+      };
+    case 'reminder':
+      return {
+        icon: Bell,
+        color: 'text-orange-600',
+        bg: 'bg-orange-100',
+        ring: 'ring-orange-200',
+        line: 'bg-orange-300',
+        label: '催办',
+      };
+    case 'escalation':
+      return {
+        icon: AlertOctagon,
+        color: 'text-rose-600',
+        bg: 'bg-rose-100',
+        ring: 'ring-rose-200',
+        line: 'bg-rose-300',
+        label: '升级',
+      };
+    case 'auto_decision':
+      return {
+        icon: Zap,
+        color: 'text-violet-600',
+        bg: 'bg-violet-100',
+        ring: 'ring-violet-200',
+        line: 'bg-violet-300',
+        label: '自动裁决',
+      };
+    case 'cancel':
+      return {
+        icon: XCircle,
+        color: 'text-slate-600',
+        bg: 'bg-slate-100',
+        ring: 'ring-slate-200',
+        line: 'bg-slate-300',
+        label: '退订',
+      };
+    default:
+      return {
+        icon: History,
+        color: 'text-slate-500',
+        bg: 'bg-slate-100',
+        ring: 'ring-slate-200',
+        line: 'bg-slate-300',
+        label: '记录',
+      };
+  }
+}
+
+function ChangeLogTimeline({ log }: { log: ChangeLogEntry[] }) {
+  if (log.length === 0) return <Empty description="暂无变更记录" />;
+
+  return (
+    <div className="relative">
+      {log.map((entry, i) => {
+        const style = changeLogStyle(entry.type);
+        const Icon = style.icon;
+        const isLast = i === log.length - 1;
+        return (
+          <div key={entry.id} className="flex gap-4">
+            <div className="flex flex-col items-center">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center ring-4 z-10 bg-white',
+                style.ring
+              )}>
+                <div className={cn('w-7 h-7 rounded-full flex items-center justify-center', style.bg)}>
+                  <Icon className={cn('w-4 h-4', style.color)} />
+                </div>
+              </div>
+              {!isLast && <div className={cn('flex-1 w-0.5 mt-1', style.line)} />}
+            </div>
+            <div className="flex-1 pb-6 -mt-1">
+              <div className="flex items-start justify-between gap-3 flex-wrap mb-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={cn('text-sm font-bold', style.color)}>{entry.title}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                    {style.label}
+                  </span>
+                  {entry.isSystem && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100">
+                      系统自动
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                  {fmtDT(entry.time)}
+                </span>
+              </div>
+              {entry.operatorName && (
+                <p className="text-[11px] text-slate-500 mb-1">
+                  操作人：<span className="font-medium text-slate-600">{entry.operatorName}</span>
+                </p>
+              )}
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {entry.description}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ReservationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -216,6 +363,8 @@ export default function ReservationDetail() {
   const [acting, setActing] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [changeLog, setChangeLog] = useState<ChangeLogEntry[]>([]);
+  const [activeTab, setActiveTab] = useState<'timeline' | 'log'>('timeline');
 
   useEffect(() => {
     if (!id) return;
@@ -223,6 +372,8 @@ export default function ReservationDetail() {
       setLoading(true);
       const res = await api.getReservation(id);
       if (res.success && res.data) setData(res.data);
+      const logRes = await api.getChangeLog(id);
+      if (logRes.success && logRes.data) setChangeLog(logRes.data);
       setLoading(false);
     })();
   }, [id]);
@@ -233,6 +384,8 @@ export default function ReservationDetail() {
     if (id) {
       const res = await api.getReservation(id);
       if (res.success && res.data) setData(res.data);
+      const logRes = await api.getChangeLog(id);
+      if (logRes.success && logRes.data) setChangeLog(logRes.data);
       loadMyReservations();
     }
     setActing(false);
@@ -360,23 +513,55 @@ export default function ReservationDetail() {
         </Card>
 
         <Card className="lg:col-span-3">
-          <Card.Header>
-            <div>
-              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                审批轨迹
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">共 {data.approvalTrail.length} 个审批节点</p>
+          <Card.Header className="pb-0">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <History className="w-4 h-4 text-indigo-500" />
+                  全量追踪
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">从提交到当前的完整记录</p>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                    activeTab === 'timeline'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  )}
+                  onClick={() => setActiveTab('timeline')}
+                >
+                  审批轨迹
+                </button>
+                <button
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                    activeTab === 'log'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  )}
+                  onClick={() => setActiveTab('log')}
+                >
+                  变更记录
+                </button>
+              </div>
             </div>
           </Card.Header>
           <Card.Body>
-            {data.approvalTrail.length === 0 ? (
-              <Empty description="暂无审批记录" />
+            {activeTab === 'timeline' ? (
+              data.approvalTrail.length === 0 ? (
+                <Empty description="暂无审批记录" />
+              ) : (
+                <div className="space-y-0.5 pt-2">
+                  {data.approvalTrail.map((node, i) => (
+                    <TimelineNode key={node.id} node={node} isLast={i === data.approvalTrail.length - 1} />
+                  ))}
+                </div>
+              )
             ) : (
-              <div className="space-y-0.5">
-                {data.approvalTrail.map((node, i) => (
-                  <TimelineNode key={node.id} node={node} isLast={i === data.approvalTrail.length - 1} />
-                ))}
+              <div className="pt-2">
+                <ChangeLogTimeline log={changeLog} />
               </div>
             )}
           </Card.Body>

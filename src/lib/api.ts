@@ -9,6 +9,7 @@ import type {
   DashboardStats,
   ApiResponse,
   SplitRecord,
+  ChangeLogEntry,
 } from '../../shared/types';
 
 const API_BASE = '/api';
@@ -73,6 +74,7 @@ export const api = {
   },
   getAllReservations: () => request<Reservation[]>('/reservations/all'),
   getReservation: (id: string) => request<Reservation>(`/reservations/${id}`),
+  getChangeLog: (id: string) => request<ChangeLogEntry[]>(`/reservations/${id}/changelog`),
   cancelReservation: (id: string, reason?: string) =>
     request<{ reservation: Reservation; split?: SplitRecord }>(
       `/reservations/${id}/cancel`,
