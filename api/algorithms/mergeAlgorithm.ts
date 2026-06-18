@@ -76,6 +76,7 @@ export const mergeWithExisting = (
       endTime: mergedSlot.end,
       status,
       mergedFrom: mergeable.map((b) => b.id),
+      mergedAt: new Date().toISOString(),
     },
     mergedBlockIds: mergeable.map((b) => b.id),
   };

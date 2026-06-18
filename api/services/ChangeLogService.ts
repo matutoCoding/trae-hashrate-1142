@@ -185,18 +185,29 @@ export const buildChangeLog = (reservation: Reservation): ChangeLogEntry[] => {
 
   const occ = db.occupancies.find((o) => o.id === reservation.occupancyId);
   if (occ && occ.mergedFrom && occ.mergedFrom.length > 0) {
+    const mergedReservations = db.reservations.filter(
+      (r) => occ.reservationIds.includes(r.id) && r.id !== reservation.id
+    );
+    const mergedNames = mergedReservations.map(
+      (r) => `${r.projectName}（${r.userName}）`
+    );
     log.push({
       id: genId(),
       type: 'merge',
-      time: reservation.createdAt,
+      time: occ.mergedAt || reservation.createdAt,
       operatorId: 'auto_system',
       operatorName: '系统自动',
       isSystem: true,
       title: '时段合并',
-      description: `与相邻 ${occ.mergedFrom.length} 个预约自动合并为连续占用`,
+      description: mergedNames.length > 0
+        ? `与 ${mergedNames.join('、')} 自动合并为连续占用（${fmtShort(occ.startTime)} ~ ${fmtShort(occ.endTime)}）`
+        : `与相邻 ${occ.mergedFrom.length} 个预约自动合并为连续占用`,
       details: {
         mergedFrom: occ.mergedFrom,
         occupancyId: occ.id,
+        mergedReservationIds: mergedReservations.map((r) => r.id),
+        occupancyStartTime: occ.startTime,
+        occupancyEndTime: occ.endTime,
       },
     });
   }
@@ -205,13 +216,18 @@ export const buildChangeLog = (reservation: Reservation): ChangeLogEntry[] => {
     log.push({
       id: genId(),
       type: 'cancel',
-      time: reservation.createdAt,
+      time: reservation.cancelledAt || reservation.createdAt,
       operatorId: reservation.userId,
       operatorName: reservation.userName,
       isSystem: false,
       title: '退订预约',
-      description: `${reservation.userName} 取消了预约`,
-      details: {},
+      description: reservation.cancelReason
+        ? `${reservation.userName} 取消了预约，原因：${reservation.cancelReason}`
+        : `${reservation.userName} 取消了预约`,
+      details: {
+        cancelReason: reservation.cancelReason,
+        cancelledAt: reservation.cancelledAt,
+      },
     });
   }
 
@@ -235,6 +251,11 @@ const roleText = (role: string) => {
     default:
       return role;
   }
+};
+
+const fmtShort = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
 export const getChangeLog = (reservationId: string): ChangeLogEntry[] => {

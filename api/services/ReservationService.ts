@@ -112,8 +112,11 @@ export const getReservationsByUser = (
   );
 };
 
-export const getReservationById = (id: string): Reservation | undefined => {
-  return db.reservations.find((r) => r.id === id);
+export const getReservationById = (id: string): Reservation & { occupancy?: OccupancyBlock } => {
+  const r = db.reservations.find((r) => r.id === id);
+  if (!r) return undefined as unknown as Reservation & { occupancy?: OccupancyBlock };
+  const occ = db.occupancies.find((o) => o.id === r.occupancyId);
+  return { ...r, occupancy: occ };
 };
 
 export const cancelReservation = (
@@ -179,6 +182,8 @@ export const cancelReservation = (
         });
 
         reservation.status = 'cancelled';
+        reservation.cancelledAt = new Date().toISOString();
+        reservation.cancelReason = reason;
         if (!reservation.splitHistory) reservation.splitHistory = [];
         reservation.splitHistory.push(splitResult.splitRecord);
 
@@ -192,6 +197,8 @@ export const cancelReservation = (
   }
 
   reservation.status = 'cancelled';
+  reservation.cancelledAt = new Date().toISOString();
+  reservation.cancelReason = reason;
   return { success: true, reservation };
 };
 

@@ -517,15 +517,54 @@ export default function ApprovalCenter() {
     }
   };
   const list = useMemo(() => {
-    if (tab === 'pending') return pendingApprovals;
-    if (tab === 'processed') return allApprovals.filter((n) => n.status !== 'pending');
-    return allApprovals;
-  }, [tab, pendingApprovals, allApprovals]);
+    let result: ApprovalNodeEx[];
+    if (tab === 'pending') result = pendingApprovals as ApprovalNodeEx[];
+    else if (tab === 'processed') result = (allApprovals as ApprovalNodeEx[]).filter((n) => n.status !== 'pending');
+    else result = allApprovals as ApprovalNodeEx[];
+
+    if (filters.status) {
+      result = result.filter((n) => n.status === filters.status);
+    }
+    if (filters.benchId) {
+      result = result.filter((n) => n.reservation?.benchId === filters.benchId);
+    }
+    if (filters.userName) {
+      const kw = filters.userName.toLowerCase();
+      result = result.filter((n) => n.reservation?.userName.toLowerCase().includes(kw));
+    }
+    if (filters.projectName) {
+      const kw = filters.projectName.toLowerCase();
+      result = result.filter((n) => n.reservation?.projectName.toLowerCase().includes(kw));
+    }
+    return result;
+  }, [tab, pendingApprovals, allApprovals, filters]);
 
   const benchOptions = useMemo(
     () => benches.map((b) => ({ id: b.id, name: b.name })),
     [benches]
   );
+
+  const tabCounts = useMemo(() => {
+    const applyFilters = (items: ApprovalNodeEx[]) => {
+      let r = items;
+      if (filters.status) r = r.filter((n) => n.status === filters.status);
+      if (filters.benchId) r = r.filter((n) => n.reservation?.benchId === filters.benchId);
+      if (filters.userName) {
+        const kw = filters.userName.toLowerCase();
+        r = r.filter((n) => n.reservation?.userName.toLowerCase().includes(kw));
+      }
+      if (filters.projectName) {
+        const kw = filters.projectName.toLowerCase();
+        r = r.filter((n) => n.reservation?.projectName.toLowerCase().includes(kw));
+      }
+      return r.length;
+    };
+    return {
+      pending: applyFilters(pendingApprovals as ApprovalNodeEx[]),
+      processed: applyFilters((allApprovals as ApprovalNodeEx[]).filter((n) => n.status !== 'pending')),
+      all: applyFilters(allApprovals as ApprovalNodeEx[]),
+    };
+  }, [pendingApprovals, allApprovals, filters]);
 
   return (
     <div className="space-y-6">
@@ -572,10 +611,10 @@ export default function ApprovalCenter() {
                 }}
               >
                 {t.key === 'pending'
-                  ? pendingApprovals.length
+                  ? tabCounts.pending
                   : t.key === 'processed'
-                    ? allApprovals.filter((n) => n.status !== 'pending').length
-                    : allApprovals.length}
+                    ? tabCounts.processed
+                    : tabCounts.all}
               </span>
               {tab === t.key && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />

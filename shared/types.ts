@@ -45,6 +45,7 @@ export interface OccupancyBlock {
   endTime: string;
   status: OccupancyStatus;
   mergedFrom?: string[];
+  mergedAt?: string;
   splitFrom?: string;
   reservations?: Reservation[];
 }
@@ -69,6 +70,8 @@ export interface Reservation {
   createdAt: string;
   approvalTrail: ApprovalNode[];
   splitHistory?: SplitRecord[];
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 export type ApprovalNodeStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'escalated';

@@ -31,7 +31,7 @@ export type ApprovalNodeWithReservation = ApprovalNode & {
 
 export const getPendingApprovals = (
   approverId: string,
-  filters?: { benchId?: string; userName?: string; projectName?: string }
+  filters?: { benchId?: string; userName?: string; projectName?: string; status?: ApprovalNodeStatus }
 ): ApprovalNodeWithReservation[] => {
   let result = db.approvals
     .filter((a) => a.approverId === approverId && a.status === 'pending')

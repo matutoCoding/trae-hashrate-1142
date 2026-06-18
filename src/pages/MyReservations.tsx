@@ -507,6 +507,39 @@ function CalendarView({
               >
                 已通过
               </button>
+              <button
+                onClick={() => onFilterStatusChange('rejected')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'rejected'
+                    ? 'bg-rose-100 text-rose-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                已驳回
+              </button>
+              <button
+                onClick={() => onFilterStatusChange('cancelled')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'cancelled'
+                    ? 'bg-slate-200 text-slate-600 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                已取消
+              </button>
+              <button
+                onClick={() => onFilterStatusChange('completed')}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all',
+                  filterStatus === 'completed'
+                    ? 'bg-indigo-100 text-indigo-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                已完成
+              </button>
             </div>
             <select
               value={filterBenchId}

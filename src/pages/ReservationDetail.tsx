@@ -28,6 +28,7 @@ import { cn } from '../lib/utils';
 import Empty from '../components/Empty';
 import type {
   Reservation,
+  OccupancyBlock,
   ApprovalNode,
   ReminderRecord,
   SplitRecord,
@@ -359,6 +360,7 @@ export default function ReservationDetail() {
   const navigate = useNavigate();
   const { loadMyReservations } = useAppStore();
   const [data, setData] = useState<Reservation | null>(null);
+  const [occupancy, setOccupancy] = useState<OccupancyBlock | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
@@ -371,7 +373,11 @@ export default function ReservationDetail() {
     (async () => {
       setLoading(true);
       const res = await api.getReservation(id);
-      if (res.success && res.data) setData(res.data);
+      if (res.success && res.data) {
+        setData(res.data);
+        const occData = (res.data as Reservation & { occupancy?: OccupancyBlock }).occupancy;
+        if (occData) setOccupancy(occData);
+      }
       const logRes = await api.getChangeLog(id);
       if (logRes.success && logRes.data) setChangeLog(logRes.data);
       setLoading(false);
@@ -383,7 +389,12 @@ export default function ReservationDetail() {
     await fn();
     if (id) {
       const res = await api.getReservation(id);
-      if (res.success && res.data) setData(res.data);
+      if (res.success && res.data) {
+        setData(res.data);
+        const occData = (res.data as Reservation & { occupancy?: OccupancyBlock }).occupancy;
+        if (occData) setOccupancy(occData);
+        else setOccupancy(null);
+      }
       const logRes = await api.getChangeLog(id);
       if (logRes.success && logRes.data) setChangeLog(logRes.data);
       loadMyReservations();
@@ -509,6 +520,39 @@ export default function ReservationDetail() {
                 <p className="text-sm text-slate-700 whitespace-pre-wrap">{data.description}</p>
               </div>
             </div>
+            {occupancy && (
+              <div className="flex items-start gap-3 pt-3 border-t border-slate-100">
+                <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-purple-500" />
+                </div>
+                <div className="flex-1 min-w-0 pt-1">
+                  <p className="text-xs text-slate-400 mb-1">占用段</p>
+                  {occupancy.mergedFrom && occupancy.mergedFrom.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-purple-700">
+                        合并占用 · {fmtSlot(occupancy.startTime, occupancy.endTime)}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        含 {occupancy.reservationIds.length} 条预约，本条占用 {fmtSlot(data.startTime, data.endTime)}
+                      </p>
+                    </div>
+                  ) : occupancy.reservationIds.length > 1 ? (
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-purple-700">
+                        合并占用 · {fmtSlot(occupancy.startTime, occupancy.endTime)}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        含 {occupancy.reservationIds.length} 条预约，本条占用 {fmtSlot(data.startTime, data.endTime)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-slate-700">
+                      {fmtSlot(occupancy.startTime, occupancy.endTime)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </Card.Body>
         </Card>
 
