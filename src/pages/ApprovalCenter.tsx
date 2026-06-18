@@ -1,0 +1,157 @@
+import { useEffect, useState } from 'react';
+import { CheckCircle, XCircle, ArrowUpCircle, Timer, AlertCircle, ShieldAlert, Loader2 } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
+import { Card } from '../components/Card';
+import { Button } from '../components/Button';
+import { api } from '../lib/api';
+import { cn } from '../lib/utils';
+import type { ApprovalNode } from '../../shared/types';
+
+type TabKey = 'pending' | 'processed' | 'all';
+const tabs: { key: TabKey; label: string }[] = [{ key: 'pending', label: '待审批' }, { key: 'processed', label: '已处理' }, { key: 'all', label: '全部' }];
+const statusBadge: Record<string, { label: string; cls: string }> = { approved: { label: '已通过', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, rejected: { label: '已驳回', cls: 'bg-rose-100 text-rose-700 border-rose-200' }, timeout: { label: '超时裁决', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, escalated: { label: '已升级', cls: 'bg-purple-100 text-purple-700 border-purple-200' }, pending: { label: '待审批', cls: 'bg-blue-100 text-blue-700 border-blue-200' } };
+
+const getUrgency = (d: string) => { const h = (new Date(d).getTime() - Date.now()) / 36e5; return h < 6 ? 'bg-rose-500' : h < 12 ? 'bg-orange-500' : 'bg-emerald-500'; };
+const getCountdown = (d: string) => { const ms = new Date(d).getTime() - Date.now(), h = Math.max(0, ms / 36e5); if (ms <= 0) return { t: '已超时', c: 'bg-rose-100 text-rose-700 border-rose-200' }; if (h < 1) return { t: `剩余${Math.ceil(h * 60)}分钟`, c: 'bg-rose-100 text-rose-700 border-rose-200' }; if (h < 6) return { t: `剩余${h.toFixed(1)}小时`, c: 'bg-rose-100 text-rose-700 border-rose-200' }; if (h < 12) return { t: `剩余${h.toFixed(0)}小时`, c: 'bg-orange-100 text-orange-700 border-orange-200' }; if (h < 24) return { t: `剩余${h.toFixed(0)}小时`, c: 'bg-amber-100 text-amber-700 border-amber-200' }; return { t: `剩余${(h / 24).toFixed(1)}天`, c: 'bg-emerald-100 text-emerald-700 border-emerald-200' }; };
+const fmt = (s: string) => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const fmtSlot = (a: string, b: string) => { const s = new Date(a), e = new Date(b); return `${s.getMonth() + 1}/${s.getDate()} ${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}-${String(e.getHours()).padStart(2, '0')}:${String(e.getMinutes()).padStart(2, '0')}`; };
+const getRes = (n: ApprovalNode) => (n as ApprovalNode & { reservation?: { description?: string; benchName?: string; startTime?: string; endTime?: string; userName?: string; projectName?: string; createdAt?: string } }).reservation;
+
+function CommentModal({ open, title, onClose, onConfirm, loading, variant = 'success' }: { open: boolean; title: string; onClose: () => void; onConfirm: (c: string) => void; loading?: boolean; variant?: 'success' | 'danger' }) {
+  const [comment, setComment] = useState('');
+  useEffect(() => { if (open) setComment(''); }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+      <div className="w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className={cn('px-6 py-4 flex items-center gap-3', variant === 'success' ? 'bg-emerald-50 border-b border-emerald-100' : 'bg-rose-50 border-b border-rose-100')}>
+          <div className={cn('p-2 rounded-xl', variant === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600')}>
+            {variant === 'success' ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+          </div>
+          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+        </div>
+        <div className="p-6"><label className="block"><span className="text-sm font-medium text-slate-700 mb-2 block">审批意见</span><textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="请输入审批意见（选填）" rows={4} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none text-sm" /></label></div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+          <Button variant="outline" onClick={onClose} disabled={loading}>取消</Button>
+          <Button variant={variant} onClick={() => onConfirm(comment)} loading={loading}>{variant === 'success' ? '确认通过' : '确认驳回'}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PendingCard({ node, onApprove, onReject, onEscalate, escalating }: { node: ApprovalNode; onApprove: (n: ApprovalNode) => void; onReject: (n: ApprovalNode) => void; onEscalate: (n: ApprovalNode) => void; escalating: boolean }) {
+  const urgency = getUrgency(node.deadline), cd = getCountdown(node.deadline), r = getRes(node);
+  return (
+    <div className="relative flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5">
+      <div className={cn('w-1.5 flex-shrink-0', urgency)} />
+      <div className="flex-1 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><h3 className="text-base font-bold text-slate-800 truncate">{r?.userName ?? '—'}</h3><span className="text-slate-300">·</span><p className="text-sm font-medium text-slate-600 truncate">{r?.projectName ?? '—'}</p></div></div>
+          <div className={cn('inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0', cd.c)}><Timer className="w-3.5 h-3.5" /><span>{cd.t}</span></div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl"><span className="text-slate-400 font-medium">实验台</span><span className="text-slate-700 font-semibold truncate">{r?.benchName ?? '—'}</span></div>
+          <div className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl"><span className="text-slate-400 font-medium">时段</span><span className="text-slate-700 font-semibold truncate">{r?.startTime && r?.endTime ? fmtSlot(r.startTime, r.endTime) : '—'}</span></div>
+          <div className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl col-span-2 sm:col-span-1"><span className="text-slate-400 font-medium">提交</span><span className="text-slate-700 font-semibold">{fmt(r?.createdAt ?? node.createdAt)}</span></div>
+        </div>
+        {r?.description && <p className="text-sm text-slate-600 line-clamp-2 bg-slate-50 p-3 rounded-xl border border-slate-100">{r.description}</p>}
+        <div className="flex items-center gap-2 pt-1">
+          <Button variant="success" size="sm" icon={<CheckCircle className="w-4 h-4" />} onClick={() => onApprove(node)}>通过</Button>
+          <Button variant="danger" size="sm" icon={<XCircle className="w-4 h-4" />} onClick={() => onReject(node)}>驳回</Button>
+          <Button variant="outline" size="sm" icon={escalating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpCircle className="w-4 h-4" />} onClick={() => onEscalate(node)} disabled={escalating}>升级</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProcessedCard({ node }: { node: ApprovalNode }) {
+  const badge = statusBadge[node.status] ?? statusBadge.pending, r = getRes(node);
+  return (
+    <div className="relative flex overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50 shadow-sm opacity-90">
+      <div className="w-1.5 flex-shrink-0 bg-slate-300" />
+      <div className="flex-1 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><h3 className="text-base font-bold text-slate-600 truncate">{r?.userName ?? '—'}</h3><span className="text-slate-300">·</span><p className="text-sm font-medium text-slate-500 truncate">{r?.projectName ?? '—'}</p></div></div>
+          <div className={cn('inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0', badge.cls)}>{badge.label}</div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div className="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-slate-100"><span className="text-slate-400 font-medium">实验台</span><span className="text-slate-600 font-semibold truncate">{r?.benchName ?? '—'}</span></div>
+          <div className="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-slate-100"><span className="text-slate-400 font-medium">时段</span><span className="text-slate-600 font-semibold truncate">{r?.startTime && r?.endTime ? fmtSlot(r.startTime, r.endTime) : '—'}</span></div>
+          <div className="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-slate-100 col-span-2 sm:col-span-1"><span className="text-slate-400 font-medium">处理于</span><span className="text-slate-600 font-semibold">{node.handledAt ? fmt(node.handledAt) : '—'}</span></div>
+        </div>
+        {r?.description && <p className="text-sm text-slate-500 line-clamp-2 bg-white p-3 rounded-xl border border-slate-100">{r.description}</p>}
+        {node.comment && <div className="p-3 bg-white rounded-xl border border-slate-100"><p className="text-xs font-semibold text-slate-500 mb-1.5 flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" />审批意见</p><p className="text-sm text-slate-600">{node.comment}</p></div>}
+        <p className="text-xs text-slate-400">审批人：{node.approverName} · 提交 {fmt(r?.createdAt ?? node.createdAt)}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function ApprovalCenter() {
+  const [tab, setTab] = useState<TabKey>('pending');
+  const [modal, setModal] = useState<{ open: boolean; type: 'approve' | 'reject'; node: ApprovalNode | null }>({ open: false, type: 'approve', node: null });
+  const [modalLoading, setModalLoading] = useState(false);
+  const [escalatingId, setEscalatingId] = useState<string | null>(null);
+  const [timeoutLoading, setTimeoutLoading] = useState(false);
+  const [toast, setToast] = useState<{ m: string; t: 'success' | 'error' } | null>(null);
+  const { pendingApprovals, allApprovals, loadPendingApprovals, loadAllApprovals } = useAppStore();
+  useEffect(() => { loadPendingApprovals(); loadAllApprovals(); }, [loadPendingApprovals, loadAllApprovals]);
+  const showToast = (m: string, t: 'success' | 'error' = 'success') => { setToast({ m, t }); setTimeout(() => setToast(null), 2500); };
+  const refresh = () => { loadPendingApprovals(); loadAllApprovals(); };
+  const handleConfirm = async (comment: string) => {
+    if (!modal.node) return;
+    setModalLoading(true);
+    try {
+      const fn = modal.type === 'approve' ? api.approve : api.reject;
+      const res = await fn(modal.node.id, comment || undefined);
+      if (res.success) { showToast(modal.type === 'approve' ? '审批通过成功' : '已驳回申请'); refresh(); }
+      else showToast(res.error || '操作失败', 'error');
+    } catch { showToast('操作失败', 'error'); }
+    finally { setModalLoading(false); setModal({ open: false, type: 'approve', node: null }); }
+  };
+  const handleEscalate = async (node: ApprovalNode) => {
+    setEscalatingId(node.id);
+    try { const res = await api.escalate(node.id); if (res.success) { showToast('升级成功，已通知上级审批人'); refresh(); } else showToast(res.error || '升级失败', 'error'); }
+    catch { showToast('升级失败', 'error'); }
+    finally { setEscalatingId(null); }
+  };
+  const handleTimeoutCheck = async () => {
+    setTimeoutLoading(true);
+    try { const res = await api.triggerTimeoutCheck(); if (res.success) { showToast(`超时检测完成：新增催办${res.data?.newReminders.length ?? 0}条`); refresh(); } else showToast(res.error || '检测失败', 'error'); }
+    catch { showToast('检测失败', 'error'); }
+    finally { setTimeoutLoading(false); }
+  };
+  const list = tab === 'pending' ? pendingApprovals : tab === 'processed' ? allApprovals.filter((n) => n.status !== 'pending') : allApprovals;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div><h1 className="text-2xl font-bold text-slate-800">审批中心</h1><p className="text-slate-500 mt-1">审核学生实验预约申请，超时自动升级与裁决</p></div>
+        <Button variant="primary" icon={timeoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />} onClick={handleTimeoutCheck} loading={timeoutLoading}>触发超时检测</Button>
+      </div>
+      <Card>
+        <div className="flex items-center gap-2 border-b border-slate-100 px-2">
+          {tabs.map((t) => (
+            <button key={t.key} onClick={() => setTab(t.key)} className={cn('px-5 py-3.5 text-sm font-semibold relative transition-colors', tab === t.key ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700')}>
+              {t.label}
+              <span className="ml-1.5 text-xs px-2 py-0.5 rounded-full" style={{ background: tab === t.key ? '#eff6ff' : '#f1f5f9', color: tab === t.key ? '#2563eb' : '#64748b' }}>
+                {t.key === 'pending' ? pendingApprovals.length : t.key === 'processed' ? allApprovals.filter((n) => n.status !== 'pending').length : allApprovals.length}
+              </span>
+              {tab === t.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />}
+            </button>
+          ))}
+        </div>
+        <div className="p-5 space-y-4">
+          {list.length === 0 ? (
+            <div className="py-16 text-center"><div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center"><ShieldAlert className="w-8 h-8 text-slate-400" /></div><p className="text-slate-500 text-sm">{tab === 'pending' ? '暂无待审批申请' : tab === 'processed' ? '暂无已处理记录' : '暂无审批记录'}</p></div>
+          ) : list.map((node) => (tab === 'pending' || node.status === 'pending' ? (
+            <PendingCard key={node.id} node={node} onApprove={(n) => setModal({ open: true, type: 'approve', node: n })} onReject={(n) => setModal({ open: true, type: 'reject', node: n })} onEscalate={handleEscalate} escalating={escalatingId === node.id} />
+          ) : <ProcessedCard key={node.id} node={node} />))}
+        </div>
+      </Card>
+      <CommentModal open={modal.open} title={modal.type === 'approve' ? '通过审批' : '驳回申请'} variant={modal.type === 'approve' ? 'success' : 'danger'} loading={modalLoading} onClose={() => !modalLoading && setModal({ open: false, type: 'approve', node: null })} onConfirm={handleConfirm} />
+      {toast && <div className={cn('fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-lg flex items-center gap-2', toast.t === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white')}>{toast.t === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}<span className="text-sm font-medium">{toast.m}</span></div>}
+    </div>
+  );
+}
