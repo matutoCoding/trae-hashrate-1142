@@ -37,11 +37,11 @@ export const createReservation = (
 ): CreateReservationResult => {
   const timeSlot: TimeSlot = { start: data.startTime, end: data.endTime };
 
-  const conflict = checkConflict(timeSlot, db.occupancies);
+  const conflict = checkConflict(timeSlot, data.benchId, db.occupancies);
   if (conflict) {
     return {
       success: false,
-      conflict: `时段冲突：与已有占用 (${new Date(conflict.startTime).toLocaleString('zh-CN')} - ${new Date(conflict.endTime).toLocaleString('zh-CN')}) 重叠`,
+      conflict: `时段冲突：${db.benches.find((b) => b.id === conflict.benchId)?.name || '该实验台'} 已有占用 (${new Date(conflict.startTime).toLocaleString('zh-CN')} - ${new Date(conflict.endTime).toLocaleString('zh-CN')}) 重叠`,
     };
   }
 
@@ -155,7 +155,7 @@ export const cancelReservation = (
         occupancy,
         cancelSlot,
         reservationId,
-        remainingIds,
+        db.reservations,
         operatorId,
         operatorName,
         reason
@@ -169,21 +169,12 @@ export const cancelReservation = (
         db.occupancies.push(...splitResult.newBlocks);
         db.splits.push(splitResult.splitRecord);
 
-        remainingIds.forEach((rid) => {
+        Object.entries(splitResult.reservationOccupancyMap).forEach(([rid, newOccId]) => {
           const r = db.reservations.find((x) => x.id === rid);
           if (r) {
-            const matchingBlock = splitResult.newBlocks.find((b) => {
-              const rs = new Date(r.startTime).getTime();
-              const re = new Date(r.endTime).getTime();
-              const bs = new Date(b.startTime).getTime();
-              const be = new Date(b.endTime).getTime();
-              return rs >= bs && re <= be;
-            });
-            if (matchingBlock) {
-              r.occupancyId = matchingBlock.id;
-              if (!r.splitHistory) r.splitHistory = [];
-              r.splitHistory.push(splitResult.splitRecord);
-            }
+            r.occupancyId = newOccId;
+            if (!r.splitHistory) r.splitHistory = [];
+            r.splitHistory.push(splitResult.splitRecord);
           }
         });
 

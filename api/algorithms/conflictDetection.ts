@@ -2,6 +2,7 @@ import type { OccupancyBlock, TimeSlot } from '../../shared/types.js';
 
 export const checkConflict = (
   newSlot: TimeSlot,
+  benchId: string,
   existingBlocks: OccupancyBlock[],
   excludeIds: string[] = []
 ): OccupancyBlock | null => {
@@ -9,6 +10,7 @@ export const checkConflict = (
   const newEnd = new Date(newSlot.end).getTime();
 
   for (const block of existingBlocks) {
+    if (block.benchId !== benchId) continue;
     if (excludeIds.includes(block.id)) continue;
     if (block.status === 'cancelled') continue;
 

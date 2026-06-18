@@ -6,6 +6,7 @@ export interface SplitResult {
   newBlocks: OccupancyBlock[];
   removedBlockIds: string[];
   splitRecord: SplitRecord;
+  reservationOccupancyMap: Record<string, string>;
   reason?: string;
 }
 
@@ -19,11 +20,21 @@ export const getCancelledSlot = (
   };
 };
 
+const reservationsInBlock = (
+  blockStart: number,
+  blockEnd: number,
+  allReservations: { id: string; start: number; end: number }[]
+): string[] => {
+  return allReservations
+    .filter((r) => r.start >= blockStart && r.end <= blockEnd)
+    .map((r) => r.id);
+};
+
 export const splitOccupancyByCancellation = (
   occupancy: OccupancyBlock,
   cancelSlot: TimeSlot,
   cancelReservationId: string,
-  remainingReservationIds: string[],
+  allReservations: Reservation[],
   operatorId: string,
   operatorName: string,
   reason: string = '用户退订'
@@ -37,27 +48,46 @@ export const splitOccupancyByCancellation = (
     return null;
   }
 
+  const reservationInfos = allReservations
+    .filter((r) => occupancy.reservationIds.includes(r.id) && r.id !== cancelReservationId)
+    .map((r) => ({
+      id: r.id,
+      start: new Date(r.startTime).getTime(),
+      end: new Date(r.endTime).getTime(),
+    }));
+
   const newBlocks: OccupancyBlock[] = [];
+  const reservationOccupancyMap: Record<string, string> = {};
 
   if (cancelStart > occStart) {
+    const blockStart = occStart;
+    const blockEnd = cancelStart;
+    const matchingRids = reservationsInBlock(blockStart, blockEnd, reservationInfos);
+    const newBlockId = genId();
+    matchingRids.forEach((rid) => { reservationOccupancyMap[rid] = newBlockId; });
     newBlocks.push({
-      id: genId(),
+      id: newBlockId,
       benchId: occupancy.benchId,
-      reservationIds: [...remainingReservationIds],
-      startTime: new Date(occStart).toISOString(),
-      endTime: new Date(cancelStart).toISOString(),
+      reservationIds: matchingRids,
+      startTime: new Date(blockStart).toISOString(),
+      endTime: new Date(blockEnd).toISOString(),
       status: occupancy.status,
       splitFrom: occupancy.id,
     });
   }
 
   if (cancelEnd < occEnd) {
+    const blockStart = cancelEnd;
+    const blockEnd = occEnd;
+    const matchingRids = reservationsInBlock(blockStart, blockEnd, reservationInfos);
+    const newBlockId = genId();
+    matchingRids.forEach((rid) => { reservationOccupancyMap[rid] = newBlockId; });
     newBlocks.push({
-      id: genId(),
+      id: newBlockId,
       benchId: occupancy.benchId,
-      reservationIds: [...remainingReservationIds],
-      startTime: new Date(cancelEnd).toISOString(),
-      endTime: new Date(occEnd).toISOString(),
+      reservationIds: matchingRids,
+      startTime: new Date(blockStart).toISOString(),
+      endTime: new Date(blockEnd).toISOString(),
       status: occupancy.status,
       splitFrom: occupancy.id,
     });
@@ -78,6 +108,7 @@ export const splitOccupancyByCancellation = (
     newBlocks,
     removedBlockIds: [occupancy.id],
     splitRecord,
+    reservationOccupancyMap,
   };
 };
 

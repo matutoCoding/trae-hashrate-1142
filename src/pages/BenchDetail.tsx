@@ -53,7 +53,7 @@ export default function BenchDetail() {
     const ex = benches.find((b) => b.id === id);
     if (!bench && ex) setBench(ex);
     loadSchedule(id);
-  }, [id]);
+  }, [id, wb]);
 
   const md = (di: number, h: number) => { setIng({ di, sh: h }); setSel({ di, sh: h, eh: h + 1 }); };
   const me = (di: number, h: number) => {

@@ -25,10 +25,39 @@ export const createApprovalNode = (
   };
 };
 
-export const getPendingApprovals = (approverId: string): ApprovalNode[] => {
+export type ApprovalNodeWithReservation = ApprovalNode & {
+  reservation?: Reservation & { benchName?: string };
+};
+
+export const getPendingApprovals = (approverId: string): ApprovalNodeWithReservation[] => {
   return db.approvals
     .filter((a) => a.approverId === approverId && a.status === 'pending')
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+    .map((a) => {
+      const reservation = db.reservations.find((r) => r.id === a.reservationId);
+      const bench = reservation ? db.benches.find((b) => b.id === reservation.benchId) : undefined;
+      return {
+        ...a,
+        reservation: reservation
+          ? { ...reservation, benchName: bench?.name || reservation.benchName }
+          : undefined,
+      };
+    });
+};
+
+export const getAllApprovals = (): ApprovalNodeWithReservation[] => {
+  return [...db.approvals]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((a) => {
+      const reservation = db.reservations.find((r) => r.id === a.reservationId);
+      const bench = reservation ? db.benches.find((b) => b.id === reservation.benchId) : undefined;
+      return {
+        ...a,
+        reservation: reservation
+          ? { ...reservation, benchName: bench?.name || reservation.benchName }
+          : undefined,
+      };
+    });
 };
 
 export const getApprovalById = (id: string): ApprovalNode | undefined => {
@@ -49,7 +78,7 @@ export const approveReservation = (
 ): ApprovalActionResult => {
   const node = db.approvals.find((a) => a.id === approvalId);
   if (!node) return { success: false, error: '审批节点不存在' };
-  if (node.approverId !== approverId && approverId !== 'admin_001') {
+  if (node.approverId !== approverId && approverId !== 'admin_001' && approverId !== 'auto_system') {
     return { success: false, error: '无权限审批此申请' };
   }
   if (node.status !== 'pending' && node.status !== 'timeout') {
@@ -59,6 +88,9 @@ export const approveReservation = (
   node.status = 'approved';
   node.handledAt = new Date().toISOString();
   if (comment) node.comment = comment;
+  if (approverId === 'auto_system') {
+    node.role = 'auto';
+  }
 
   const reservation = db.reservations.find((r) => r.id === node.reservationId);
   if (reservation) {
@@ -80,7 +112,7 @@ export const rejectReservation = (
 ): ApprovalActionResult => {
   const node = db.approvals.find((a) => a.id === approvalId);
   if (!node) return { success: false, error: '审批节点不存在' };
-  if (node.approverId !== approverId && approverId !== 'admin_001') {
+  if (node.approverId !== approverId && approverId !== 'admin_001' && approverId !== 'auto_system') {
     return { success: false, error: '无权限审批此申请' };
   }
   if (node.status !== 'pending' && node.status !== 'timeout') {
@@ -90,6 +122,9 @@ export const rejectReservation = (
   node.status = 'rejected';
   node.handledAt = new Date().toISOString();
   node.comment = comment || '审批未通过';
+  if (approverId === 'auto_system') {
+    node.role = 'auto';
+  }
 
   const reservation = db.reservations.find((r) => r.id === node.reservationId);
   if (reservation) {
@@ -189,7 +224,7 @@ export const getReminders = (filters?: {
   );
 };
 
-export const getAllApprovals = (): ApprovalNode[] => {
+export const getAllApprovalsOld = (): ApprovalNode[] => {
   return [...db.approvals].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );

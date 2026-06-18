@@ -86,6 +86,7 @@ export interface ApprovalNode {
   deadline: string;
   handledAt?: string;
   reminders: ReminderRecord[];
+  reservation?: Reservation & { benchName?: string };
 }
 
 export type ReminderType = 'reminder' | 'escalation' | 'auto_decision';
